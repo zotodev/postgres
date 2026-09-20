@@ -11,21 +11,23 @@ services:
       - |
         set -e
         (
-          until pg_isready -h /var/run/postgresql -q 2>/dev/null; do sleep 1; done
           U=$$(printenv POSTGRES_USER)
           P=$$(printenv POSTGRES_PASSWORD)
           D=$$(printenv POSTGRES_DB)
-          if psql -h /var/run/postgresql -U postgres -d postgres -c 'select 1' >/dev/null 2>&1; then
-            AUTH_USER=postgres
-          else
+          until pg_isready -h /var/run/postgresql -U "$$U" -q 2>/dev/null; do sleep 1; done
+          if psql -h /var/run/postgresql -U "$$U" -d postgres -c 'select 1' >/dev/null 2>&1; then
             AUTH_USER=$$U
+          else
+            AUTH_USER=postgres
           fi
-          q=$$(psql -h /var/run/postgresql -U "$$AUTH_USER" -d postgres -tAqc "SELECT format('CREATE ROLE %I WITH LOGIN SUPERUSER', 'postgres') WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'postgres')")
-          [ -n "$$q" ] && psql -h /var/run/postgresql -U "$$AUTH_USER" -d postgres -c "$$q"
-          q=$$(psql -h /var/run/postgresql -U "$$AUTH_USER" -d postgres -v u="$$U" -v p="$$P" -tAqc "SELECT format('CREATE ROLE %I WITH LOGIN PASSWORD %L SUPERUSER CREATEDB CREATEROLE', :'u', :'p') WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = :'u')")
-          [ -n "$$q" ] && psql -h /var/run/postgresql -U "$$AUTH_USER" -d postgres -c "$$q"
-          q=$$(psql -h /var/run/postgresql -U "$$AUTH_USER" -d postgres -v u="$$U" -v d="$$D" -tAqc "SELECT format('CREATE DATABASE %I OWNER %I', :'d', :'u') WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = :'d')")
-          [ -n "$$q" ] && psql -h /var/run/postgresql -U "$$AUTH_USER" -d postgres -c "$$q"
+          psql -h /var/run/postgresql -U "$$AUTH_USER" -d postgres -v ON_ERROR_STOP=0 -v u="$$U" -v p="$$P" -v d="$$D" <<'SQL'
+        SELECT format('CREATE ROLE %I WITH LOGIN SUPERUSER', 'postgres')
+        WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'postgres')\gexec
+        SELECT format('CREATE ROLE %I WITH LOGIN PASSWORD %L SUPERUSER CREATEDB CREATEROLE', :'u', :'p')
+        WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = :'u')\gexec
+        SELECT format('CREATE DATABASE %I OWNER %I', :'d', :'u')
+        WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = :'d')\gexec
+        SQL
           echo "ensure-role: done"
         ) &
         exec docker-entrypoint.sh postgres
