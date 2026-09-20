@@ -1,0 +1,143 @@
+{
+  "available": true,
+  "verified": false,
+  "schemaVersion": 1,
+  "minEngine": "0.6.6",
+  "id": "postgres",
+  "name": "PostgreSQL",
+  "description": "PostgreSQL with persistent storage, configurable credentials, health checks, and a choice of private or published access.",
+  "kind": "template",
+  "logo": "postgresql",
+  "category": "database",
+  "tags": ["postgresql", "sql", "database"],
+  "framework": "docker-compose",
+  "repository": "https://github.com/postgres/postgres",
+  "services": [
+    {
+      "name": "db",
+      "image": "postgres:18.6-alpine",
+      "environment": {
+        "POSTGRES_USER": "postgres",
+        "POSTGRES_DB": "postgres"
+      },
+      "secretEnv": ["POSTGRES_PASSWORD"],
+      "volumes": ["postgres_data:/var/lib/postgresql"],
+      "exposed": false,
+      "restart": "unless-stopped",
+      "stopGracePeriod": "2m",
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\" -h 127.0.0.1"
+        ],
+        "interval": "5s",
+        "timeout": "5s",
+        "retries": 10,
+        "startPeriod": "30s"
+      },
+      "ports": ["0.0.0.0:5432:5432"]
+    }
+  ],
+  "configFields": [
+    {
+      "key": "POSTGRES_PASSWORD",
+      "service": "db",
+      "label": "Database password",
+      "help": "Auto-generated. Password for the Postgres superuser.",
+      "generate": "secret",
+      "secret": true
+    }
+  ],
+  "management": {
+    "kind": "schema"
+  },
+  "connection": {
+    "title": "Connect to PostgreSQL",
+    "description": "Database credentials and a project-internal connection URL. For published access, use the server address and published port.",
+    "guide": {
+      "intro": "Your project gets the PostgreSQL database connection.",
+      "useHint": "Connect another project to inject DATABASE_URL.",
+      "defaultMode": "internal"
+    },
+    "outputs": [
+      {
+        "id": "dbUrl",
+        "label": "Internal database URL",
+        "source": "template:postgresql://{{env:db:POSTGRES_USER}}:{{env:db:POSTGRES_PASSWORD}}@db:5432/{{env:db:POSTGRES_DB}}",
+        "service": "db",
+        "secret": true,
+        "envKey": "DATABASE_URL",
+        "recommended": true,
+        "help": "Superuser connection on the project network. OpenShip substitutes values without URL encoding: percent-encode special characters in credentials before using this URL, or pass the separate credential fields to your client."
+      },
+      {
+        "id": "dbPassword",
+        "label": "Database password",
+        "source": "env:db:POSTGRES_PASSWORD",
+        "secret": true,
+        "envKey": "POSTGRES_PASSWORD"
+      },
+      {
+        "id": "dbUser",
+        "label": "Database username",
+        "source": "env:db:POSTGRES_USER",
+        "envKey": "POSTGRES_USER"
+      },
+      {
+        "id": "dbName",
+        "label": "Database name",
+        "source": "env:db:POSTGRES_DB",
+        "envKey": "POSTGRES_DB"
+      }
+    ]
+  },
+  "endpoints": [
+    {
+      "service": "db",
+      "port": 5432,
+      "label": "PostgreSQL",
+      "kind": "tcp",
+      "defaultMode": "internal",
+      "allowedModes": ["internal", "publish"]
+    }
+  ],
+  "settings": [
+    {
+      "id": "database",
+      "label": "Database",
+      "description": "Initialization values for a new database. Editing these later changes container environment only; existing database users, passwords and names must be updated separately in PostgreSQL.",
+      "fields": [
+        {
+          "key": "POSTGRES_USER",
+          "service": "db",
+          "label": "Database username",
+          "type": "text",
+          "default": "postgres",
+          "required": true,
+          "installStep": true,
+          "requiresRedeploy": true
+        },
+        {
+          "key": "POSTGRES_PASSWORD",
+          "service": "db",
+          "label": "Database password",
+          "type": "password",
+          "secret": true,
+          "installStep": true,
+          "requiresRedeploy": true,
+          "help": "Leave blank to keep the generated or existing secret. For an existing database, use ALTER ROLE to change the database password too."
+        },
+        {
+          "key": "POSTGRES_DB",
+          "service": "db",
+          "label": "Database name",
+          "type": "text",
+          "default": "postgres",
+          "required": true,
+          "installStep": true,
+          "requiresRedeploy": true
+        }
+      ]
+    }
+  ]
+}
