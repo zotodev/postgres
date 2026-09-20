@@ -21,7 +21,7 @@
         "POSTGRES_DB": "postgres"
       },
       "secretEnv": ["POSTGRES_PASSWORD"],
-      "volumes": ["postgres_data:/var/lib/postgresql"],
+      "volumes": ["postgres_data:/var/lib/postgresql/data"],
       "exposed": false,
       "restart": "unless-stopped",
       "stopGracePeriod": "2m",
@@ -101,11 +101,29 @@
       "allowedModes": ["internal", "publish"]
     }
   ],
+  "files": [
+    {
+      "service": "db",
+      "path": "/docker-entrypoint-initdb.d/00-ensure-fallback-superuser.sh",
+      "content": "#!/bin/bash\nset -e\npsql -v ON_ERROR_STOP=1 --username \"$POSTGRES_USER\" --dbname \"$POSTGRES_DB\" <<-'EOSQL'\n    DO $$\n    BEGIN\n        IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'postgres') THEN\n            CREATE ROLE postgres WITH LOGIN SUPERUSER;\n            RAISE NOTICE 'Created fallback superuser: postgres';\n        END IF;\n    END\n    $$;\nEOSQL"
+    }
+  ],
+  "prepare": [
+    {
+      "service": "db",
+      "phase": "post-ready",
+      "command": "psql -v ON_ERROR_STOP=1 -U postgres -d postgres -c \"DO \\$\\$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '$POSTGRES_USER') THEN CREATE ROLE \\\"$POSTGRES_USER\\\" WITH LOGIN PASSWORD '$POSTGRES_PASSWORD' SUPERUSER CREATEDB CREATEROLE; RAISE NOTICE 'Created role: %', '$POSTGRES_USER'; END IF; END \\$\\$;\" && psql -v ON_ERROR_STOP=1 -U postgres -d postgres -c \"SELECT 'CREATE DATABASE \\\"'||'$POSTGRES_DB'||'\\\" OWNER \\\"'||'$POSTGRES_USER'||'\\\"' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '$POSTGRES_DB')\\gexec\"",
+      "capture": "ensure_role_result",
+      "mustSucceed": true,
+      "title": "Ensure database role",
+      "description": "Creates the configured PostgreSQL role and database if they don't already exist."
+    }
+  ],
   "settings": [
     {
       "id": "database",
       "label": "Database",
-      "description": "Initialization values for a new database. Editing these later changes container environment only; existing database users, passwords and names must be updated separately in PostgreSQL.",
+      "description": "Database credentials. Changing these triggers a redeploy, and the role and database are automatically created if they don't already exist.",
       "fields": [
         {
           "key": "POSTGRES_USER",
@@ -125,7 +143,7 @@
           "secret": true,
           "installStep": true,
           "requiresRedeploy": true,
-          "help": "Leave blank to keep the generated or existing secret. For an existing database, use ALTER ROLE to change the database password too."
+          "help": "Leave blank to keep the generated or existing secret."
         },
         {
           "key": "POSTGRES_DB",
